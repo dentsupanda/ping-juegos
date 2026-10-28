@@ -38,7 +38,7 @@
     <summary>¿Qué tan fiable es?</summary>
     <p>Un navegador no puede hacer ping (ICMP), así que se mide el tiempo de ida y vuelta HTTPS a servidores
     ubicados en la misma ciudad que los del juego (mediana de 5 tras una conexión de calentamiento; en cada ciudad
-    se queda el mejor de sus endpoints). Calibrado contra el ping real a los relays de Valve: coinciden con ±2 ms.
+    se queda el mejor de sus endpoints). Dota 2 y CS2 se miden contra servidores de Steam que están en la misma red que los de juego de Valve. El resto se calibró contra el ping real a Valve (±2–8 ms).
     Riot no publica IPs de sus servidores, así que Valorant y LoL usan la ciudad del servidor.
     Warzone en AUTO elige él solo: se muestra el mejor de sus centros probables (≈).</p>
     <p>Endpoints: <span id="eps"></span></p>
@@ -46,11 +46,17 @@
 </main>
 <script>
 // City -> endpoints in that city's datacenters, checked 2026-10-27 against Valve relay ICMP from Santiago (±2 ms).
+const steam = pop => [1, 2].map(n => `https://cache${n}-${pop}1.steamcontent.com/favicon.ico`);
 const CITIES = {
-  lim: ['Lima', ['https://www.osiptel.gob.pe/favicon.ico', 'https://www.sunat.gob.pe/favicon.ico']],
+  // Valve's own Steam caches sit next to its game relays (same /24): exact network for Dota 2 / CS2.
+  vlim: ['Lima (Valve)', steam('lim')],
+  vscl: ['Santiago (Valve)', steam('scl')],
+  vgru: ['São Paulo (Valve)', steam('gru')],
+  veze: ['Buenos Aires (Valve)', steam('eze')],
+  viad: ['Virginia (Valve)', steam('iad')],
+  vsea: ['Seattle (Valve)', steam('sea')],
   scl: ['Santiago', ['https://scl-cl-ping.vultr.com/favicon.ico']],
   gru: ['São Paulo', ['https://sao-br-ping.vultr.com/favicon.ico', 'https://dynamodb.sa-east-1.amazonaws.com/ping']],
-  eze: ['Buenos Aires', ['https://www.telecentro.com.ar/favicon.ico', 'https://www.arsat.com.ar/favicon.ico', 'https://www.conicet.gov.ar/favicon.ico']],
   bog: ['Bogotá', ['https://objectstorage.sa-bogota-1.oraclecloud.com/']],
   mia: ['Miami', ['https://fl-us-ping.vultr.com/favicon.ico']],
   ord: ['Chicago', ['https://il-us-ping.vultr.com/favicon.ico']],
@@ -60,12 +66,12 @@ const CITIES = {
 };
 // [label, city] or [label, [cities]] = best of several (auto matchmaking, shown with ≈)
 const GAMES = {
-  'DOTA 2': [['Perú', 'lim'], ['Chile', 'scl'], ['Brasil', 'gru'], ['EE.UU. Este', 'iad'], ['EE.UU. Oeste', 'sea']],
+  'DOTA 2': [['Perú', 'vlim'], ['Chile', 'vscl'], ['Brasil', 'vgru'], ['EE.UU. Este', 'viad'], ['EE.UU. Oeste', 'vsea']],
   'FORTNITE': [['Brasil', 'gru'], ['Norteamérica (NA-East)', 'iad']],
   'COD WARZONE': [['AUTO', ['gru', 'mia', 'iad']]],
   'LOL': [['LAN (Miami)', 'mia'], ['LAS (Santiago)', 'scl'], ['NA (Chicago)', 'ord']],
   'VALORANT': [['Bogotá', 'bog'], ['São Paulo', 'gru'], ['Miami', 'mia'], ['Chicago', 'ord']],
-  'CS 2': [['Perú', 'lim'], ['Chile', 'scl'], ['Brasil', 'gru'], ['Argentina', 'eze'], ['EE.UU. Virginia', 'iad'], ['EE.UU. Atlanta', 'atl']],
+  'CS 2': [['Perú', 'vlim'], ['Chile', 'vscl'], ['Brasil', 'vgru'], ['Argentina', 'veze'], ['EE.UU. Virginia', 'viad'], ['EE.UU. Atlanta', 'atl']],
 };
 const result = {};
 
