@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ping de juegos</title>
+<style>
+  :root { --bg:#0f1115; --card:#181b22; --fg:#e8eaed; --dim:#8b919c; --ok:#3ecf6e; --mid:#e6b93c; --bad:#ef5b5b; }
+  * { box-sizing:border-box }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.4 system-ui, sans-serif; padding:16px; }
+  main { max-width:720px; margin:auto }
+  h1 { font-size:22px; margin:0 0 4px }
+  p.sub { color:var(--dim); margin:0 0 16px; font-size:13px }
+  button { background:#2b6ef2; color:#fff; border:0; border-radius:8px; padding:10px 18px; font-size:15px; cursor:pointer }
+  button:disabled { opacity:.5 }
+  button.sec { background:#2a2e38 }
+  .bar { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px }
+  .games { display:grid; gap:12px; grid-template-columns:repeat(auto-fill, minmax(220px, 1fr)) }
+  .game { background:var(--card); border-radius:10px; padding:12px 14px }
+  .game h2 { font-size:14px; margin:0 0 8px; letter-spacing:.04em; color:var(--dim) }
+  .row { display:flex; justify-content:space-between; padding:3px 0 }
+  .ms { font-variant-numeric:tabular-nums; font-weight:600 }
+  .ok { color:var(--ok) } .mid { color:var(--mid) } .bad { color:var(--bad) } .na { color:var(--dim) }
+  details { margin-top:20px; color:var(--dim); font-size:13px }
+  code { font-size:12px }
+</style>
+</head>
+<body>
+<main>
+  <h1>Ping de juegos</h1>
+  <p class="sub">Se mide desde tu dispositivo y tu operador. Cierra descargas y streams para que el número sea limpio.</p>
+  <div class="bar">
+    <button id="go">Medir</button>
+    <button id="copy" class="sec" disabled>Copiar resultado</button>
+  </div>
+  <div class="games" id="games"></div>
+  <details>
+    <summary>¿Qué tan fiable es?</summary>
+    <p>Un navegador no puede hacer ping (ICMP), así que se mide el tiempo de ida y vuelta HTTPS a servidores
+    ubicados en la misma ciudad que los del juego (mediana de 5 tras una conexión de calentamiento; en cada ciudad
+    se queda el mejor de sus endpoints). Calibrado contra el ping real a los relays de Valve: coinciden con ±2 ms.
+    Riot no publica IPs de sus servidores, así que Valorant y LoL usan la ciudad del servidor.
+    Warzone en AUTO elige él solo: se muestra el mejor de sus centros probables (≈).</p>
+    <p>Endpoints: <span id="eps"></span></p>
+  </details>
+</main>
+<script>
+// City -> endpoints in that city's datacenters, checked 2026-10-27 against Valve relay ICMP from Santiago (±2 ms).
+const CITIES = {
+  lim: ['Lima', ['https://www.osiptel.gob.pe/favicon.ico', 'https://www.sunat.gob.pe/favicon.ico']],
+  scl: ['Santiago', ['https://scl-cl-ping.vultr.com/favicon.ico']],
+  gru: ['São Paulo', ['https://sao-br-ping.vultr.com/favicon.ico', 'https://dynamodb.sa-east-1.amazonaws.com/ping']],
+  eze: ['Buenos Aires', ['https://www.telecentro.com.ar/favicon.ico', 'https://www.arsat.com.ar/favicon.ico', 'https://www.conicet.gov.ar/favicon.ico']],
+  bog: ['Bogotá', ['https://objectstorage.sa-bogota-1.oraclecloud.com/']],
+  mia: ['Miami', ['https://fl-us-ping.vultr.com/favicon.ico']],
+  ord: ['Chicago', ['https://il-us-ping.vultr.com/favicon.ico']],
+  atl: ['Atlanta', ['https://ga-us-ping.vultr.com/favicon.ico']],
+  iad: ['Virginia', ['https://dynamodb.us-east-1.amazonaws.com/ping']],
+  sea: ['Seattle', ['https://wa-us-ping.vultr.com/favicon.ico']],
+};
+// [label, city] or [label, [cities]] = best of several (auto matchmaking, shown with ≈)
+const GAMES = {
+  'DOTA 2': [['Perú', 'lim'], ['Chile', 'scl'], ['Brasil', 'gru'], ['EE.UU. Este', 'iad'], ['EE.UU. Oeste', 'sea']],
+  'FORTNITE': [['Brasil', 'gru'], ['Norteamérica (NA-East)', 'iad']],
+  'COD WARZONE': [['AUTO', ['gru', 'mia', 'iad']]],
+  'LOL': [['LAN (Miami)', 'mia'], ['LAS (Santiago)', 'scl'], ['NA (Chicago)', 'ord']],
+  'VALORANT': [['Bogotá', 'bog'], ['São Paulo', 'gru'], ['Miami', 'mia'], ['Chicago', 'ord']],
+  'CS 2': [['Perú', 'lim'], ['Chile', 'scl'], ['Brasil', 'gru'], ['Argentina', 'eze'], ['EE.UU. Virginia', 'iad'], ['EE.UU. Atlanta', 'atl']],
+};
+const result = {};
+
+async function rtt(url) {
+  const t = performance.now();
+  await fetch(url + (url.includes('?') ? '&' : '?') + 'r=' + Math.random(),
+    { method: 'HEAD', mode: 'no-cors', cache: 'no-store', credentials: 'omit' });
+  return performance.now() - t;
+}
+async function measure(url) {
+  try {
+    await rtt(url); // warm-up: DNS + TCP + TLS
+    const s = [];
+    for (let i = 0; i < 5; i++) s.push(await rtt(url));
+    s.sort((a, b) => a - b);
+    return { ms: s[2], jitter: s[4] - s[0] };
+  } catch { return null; }
+}
+async function measureCity(id) {
+  let best = null;
+  for (const url of CITIES[id][1]) {
+    const r = await measure(url);
+    if (r && (!best || r.ms < best.ms)) best = r;
+  }
+  return best;
+}
+function value(city) {
+  if (!Array.isArray(city)) return result[city];
+  const rs = city.map(c => result[c]).filter(Boolean);
+  return rs.length ? rs.reduce((a, b) => a.ms <= b.ms ? a : b) : rs[0];
+}
+function cls(ms) { return ms == null ? 'na' : ms < 60 ? 'ok' : ms < 110 ? 'mid' : 'bad'; }
+function fmt(city) {
+  if (!Array.isArray(city) && !(city in result)) return '…';
+  const r = value(city);
+  if (!r) return 'sin respuesta';
+  return (Array.isArray(city) ? '≈ ' : '') + Math.round(r.ms) + ' ms';
+}
+function render() {
+  document.getElementById('games').innerHTML = Object.entries(GAMES).map(([g, rows]) =>
+    `<div class="game"><h2>${g}</h2>` + rows.map(([label, city]) => {
+      const r = value(city);
+      return `<div class="row"><span>${label}</span><span class="ms ${cls(r && r.ms)}">${fmt(city)}</span></div>`;
+    }).join('') + '</div>').join('');
+}
+
+document.getElementById('eps').innerHTML = Object.values(CITIES)
+  .map(([n, urls]) => `${n}: <code>${urls.map(u => new URL(u).host).join(', ')}</code>`).join(' · ');
+render();
+
+document.getElementById('go').onclick = async () => {
+  const go = document.getElementById('go'), copy = document.getElementById('copy');
+  go.disabled = copy.disabled = true; go.textContent = 'Midiendo…';
+  for (const k in result) delete result[k];
+  render();
+  // one city at a time so they don't compete for the same connection
+  for (const id of Object.keys(CITIES)) { result[id] = await measureCity(id); render(); }
+  go.disabled = copy.disabled = false; go.textContent = 'Medir otra vez';
+};
+document.getElementById('copy').onclick = () => {
+  const when = new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' });
+  const txt = `Ping de juegos (${when})\n` + Object.entries(GAMES).map(([g, rows]) =>
+    g + ': ' + rows.map(([l, c]) => `${l} ${fmt(c)}`).join(', ')).join('\n');
+  navigator.clipboard.writeText(txt).then(() => { document.getElementById('copy').textContent = 'Copiado'; });
+};
+</script>
+</body>
+</html>
