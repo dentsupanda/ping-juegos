@@ -31,7 +31,7 @@
   <p class="sub">Se mide desde tu dispositivo y tu operador. Cierra descargas y streams para que el número sea limpio.</p>
   <div class="bar">
     <button id="go">Medir</button>
-    <button id="copy" class="sec" disabled>Copiar resultado</button>
+    <button id="copy" class="sec" disabled>Copiar para Excel</button>
   </div>
   <div class="games" id="games"></div>
   <details>
@@ -131,10 +131,13 @@ document.getElementById('go').onclick = async () => {
   for (const id of Object.keys(CITIES)) { result[id] = await measureCity(id); render(); }
   go.disabled = copy.disabled = false; go.textContent = 'Medir otra vez';
 };
+// One number per line, in the same row order as the operators' Excel sheet (rows 2-22),
+// so pasting into an operator's column fills it directly.
 document.getElementById('copy').onclick = () => {
-  const when = new Date().toLocaleString('es-PE', { dateStyle: 'short', timeStyle: 'short' });
-  const txt = `Ping de juegos (${when})\n` + Object.entries(GAMES).map(([g, rows]) =>
-    g + ': ' + rows.map(([l, c]) => `${l} ${fmt(c)}`).join(', ')).join('\n');
+  const txt = Object.values(GAMES).flat().map(([, c]) => {
+    const r = value(c);
+    return r ? Math.round(r.ms) : '';
+  }).join('\n');
   navigator.clipboard.writeText(txt).then(() => { document.getElementById('copy').textContent = 'Copiado'; });
 };
 </script>
